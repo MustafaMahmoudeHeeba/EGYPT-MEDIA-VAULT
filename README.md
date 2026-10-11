@@ -10,70 +10,50 @@ Create a branch for your task:
 git checkout -b <task-name>
 ```
 
-Examples:
+Example:
 
 ```bash
-git checkout -b project-proposal
+git checkout -b use-case-diagram
 ```
 
 ## 2. Commit Your Work
 
-After finishing your task, commit your changes:
+After finishing your task:
 
 ```bash
 git add .
 git commit -m "Add <task-name>"
 ```
 
-Examples:
-
-```bash
-git commit -m "Add project proposal"
-```
-
 ## 3. Push Your Branch
 
-Push your branch to GitHub:
-
 ```bash
-git push -u origin <branch-name>
+git push origin <branch-name>
 ```
 
 ## 4. Create a Pull Request
 
-Create a Pull Request from your branch to `main`.
+- Create a Pull Request from your branch to `main`.
+- Make sure your work is complete before submitting.
+- Do not merge your own changes without review.
 
-Ask another team member to review your work before merging.
+## 5. Task Documentation Structure
 
-## 5. Keep Files Organized
+Each task must follow the structure below. Place the task number, task name, responsible person, and phase at the beginning of each task.
 
-Put each task in its appropriate folder under `docs/`.
+# Task [Task Number] – [Task Name]
 
-```text
-docs/
-├── project planning/
-├── requirements gathering/
-└── system analysis & design/
-```
+**Responsible:** [Name]  
+**Phase:** [Phase Name]
 
-Keep the existing folder names consistent, and do not place project documents randomly in the repository.
-
-## 6. Task Workflow
+## Project Structure
 
 ```text
-Choose a Task
-      ↓
-Create a Branch
-      ↓
-Do the Work
-      ↓
-Commit Changes
-      ↓
-Push the Branch
-      ↓
-Create a Pull Request
-      ↓
-Review & Merge
+EgySpy/
+│
+├── docs/
+│   ├── proposal/
+│   ├── requirements/
+│   ├── diagrams/
+│   └── README.md
 ```
-
-**Important:** Do not push directly to `main`. All changes should be submitted through a Pull Request.
