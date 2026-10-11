@@ -42,17 +42,36 @@ Each task must follow the structure below. Place the task number, task name, res
 
 # Task [Task Number] – [Task Name]
 
-**Responsible:** [Name]  
+**Responsible:** [Name]
 **Phase:** [Phase Name]
 
 ## Project Structure
 
 ```text
-EgySpy/
+EGYPT-MEDIA-VAULT/
 │
-├── docs/
-│   ├── proposal/
-│   ├── requirements/
-│   ├── diagrams/
-│   └── README.md
+├── README.md
+│
+└── docs/
+    │
+    ├── project planning/
+    │
+    ├── requirements gathering/
+    │
+    └── system analysis & design/
 ```
+
+## 6. Task File Organization
+
+Upload your task deliverables to the appropriate folder based on the phase the task belongs to.
+
+- **project planning/** – For project planning documents, timelines, and task assignment plans.
+- **requirements gathering/** – For requirements gathering documents and deliverables.
+- **system analysis & design/** – For system analysis documents, diagrams, and design deliverables.
+
+**Important:**
+
+- Always upload your task files to the appropriate folder according to the task's phase.
+- Do not upload task deliverables directly to the root directory.
+- Use clear and meaningful file names.
+- If you are unsure which folder your task belongs to, confirm the phase before uploading.
