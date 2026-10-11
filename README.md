@@ -1,38 +1,79 @@
-# Egypt Media Vault 🏛️📰
+# GitHub Team Rules
 
-**Egypt Media Vault** is an end-to-end data engineering platform designed to collect, process, store, and analyze news data from major Egyptian digital news portals (such as Youm7 and Masrawy).
+## 1. Create a Branch for Each Task
 
----
+Do not work directly on `main`.
 
-## 📌 Project Overview
-The system automates web scraping from target Egyptian news outlets, cleans and normalizes raw text, loads structured datasets into a Data Warehouse using dimensional modeling, and surface operational and analytical KPIs via an interactive dashboard.
+Create a branch for your task:
 
----
+```bash
+git checkout -b <task-name>
+```
 
-## 🏗️ System Architecture & Data Pipeline
+Examples:
 
-1. **Data Ingestion & Scraping:**
-   * Automated scrapers extract headlines, article bodies, publication timestamps, authors, and categories.
-2. **ETL & Processing:**
-   * Text normalization, Arabic text cleaning, deduplication, and staging using Python scripts.
-3. **Data Warehousing:**
-   * Dimensional data modeling (Star Schema) with Fact and Dimension tables for fast querying.
-4. **Analytics & Visualization:**
-   * Interactive dashboards displaying publishing trends, peak activity hours, and sentiment/category distributions.
+```bash
+git checkout -b project-proposal
+```
 
----
+## 2. Commit Your Work
 
-## 🛠️ Tech Stack
-* **Language:** Python
-* **Scraping:** BeautifulSoup / Scrapy / Selenium
-* **Data Warehousing & DB:** PostgreSQL / Snowflake / BigQuery
-* **Orchestration:** Apache Airflow / Scheduled Cron Jobs
-* **Visualization:** Power BI / Looker Studio
+After finishing your task, commit your changes:
 
----
+```bash
+git add .
+git commit -m "Add <task-name>"
+```
 
-## 📊 Key Indicators & Metrics (KPIs)
-* **Publishing Volume:** Article counts by source, category, and date range.
-* **Peak Publishing Hours:** Distribution of news releases across the day.
-* **Trending Topics:** Keyword frequency and word cloud analysis.
-* **Source Comparison:** Coverage speed and article volume across different portals.
+Examples:
+
+```bash
+git commit -m "Add project proposal"
+```
+
+## 3. Push Your Branch
+
+Push your branch to GitHub:
+
+```bash
+git push -u origin <branch-name>
+```
+
+## 4. Create a Pull Request
+
+Create a Pull Request from your branch to `main`.
+
+Ask another team member to review your work before merging.
+
+## 5. Keep Files Organized
+
+Put each task in its appropriate folder under `docs/`.
+
+```text
+docs/
+├── project planning/
+├── requirements gathering/
+└── system analysis & design/
+```
+
+Keep the existing folder names consistent, and do not place project documents randomly in the repository.
+
+## 6. Task Workflow
+
+```text
+Choose a Task
+      ↓
+Create a Branch
+      ↓
+Do the Work
+      ↓
+Commit Changes
+      ↓
+Push the Branch
+      ↓
+Create a Pull Request
+      ↓
+Review & Merge
+```
+
+**Important:** Do not push directly to `main`. All changes should be submitted through a Pull Request.
