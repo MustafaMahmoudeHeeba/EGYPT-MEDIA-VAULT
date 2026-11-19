@@ -33,20 +33,47 @@
 
 ```mermaid
 flowchart TD
-    A["Youm7<br/>Al-Masry Al-Youm<br/>Masrawy"]
-    B["Python 3.12<br/>Requests + BeautifulSoup4<br/>Scraping"]
+
+    A["Egyptian News Websites<br/>Youm7 • Al-Masry Al-Youm • Masrawy"]
+
+    B["Python 3.12<br/>Requests + BeautifulSoup4<br/>Web Scraping"]
+
     C["Python Processing<br/>Validation • Normalization<br/>Deduplication • Story Clustering"]
+
     D["Azure Data Lake Storage Gen2<br/>Bronze → Silver → Gold"]
-    E["Azure Database for PostgreSQL<br/>PostgreSQL"]
+
+    E["Azure Database for PostgreSQL Flexible Server<br/>PostgreSQL"]
+
     F["dbt + SQL<br/>Data Warehouse / Data Marts"]
+
     G["FastAPI<br/>REST API"]
+
     H["Next.js + React + TypeScript<br/>Web Dashboard"]
 
-    A --> B --> C --> D --> E --> F --> G --> H
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
 
     AF["Apache Airflow<br/>Pipeline Orchestration"]
+
     AF -.-> B
     AF -.-> C
     AF -.-> D
     AF -.-> E
     AF -.-> F
+```
+
+## Data Flow
+
+- Scrape Egyptian news from Youm7, Al-Masry Al-Youm, and Masrawy.
+- Validate and normalize the collected articles.
+- Deduplicate articles and cluster related stories.
+- Store raw, clean, and analytical data in ADLS Gen2.
+- Load data into PostgreSQL and transform it with dbt.
+- Expose analytical data through FastAPI.
+- Display insights through the Next.js dashboard.
+- **Apache Airflow orchestrates the pipeline.**
