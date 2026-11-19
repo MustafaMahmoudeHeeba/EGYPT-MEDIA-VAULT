@@ -2,32 +2,32 @@
 
 ## Technology Stack
 
-| Layer | Technology | Purpose | Status |
-| ----- | ---------- | ------- | ------ |
-| Sources | Youm7 | News source | Implemented |
-| Sources | Al-Masry Al-Youm | News source | Implemented |
-| Sources | Masrawy | News source | Implemented |
-| Scraping & Processing | Python 3.12 | Scraping and processing | Implemented |
-| Scraping & Processing | Requests | HTTP requests | Implemented |
-| Scraping & Processing | BeautifulSoup4 | HTML parsing | Implemented |
-| Storage | Azure Data Lake Storage Gen2 | Data lake storage | In Progress |
-| Storage | Bronze | Raw data layer | In Progress |
-| Storage | Silver | Cleaned data layer | In Progress |
-| Storage | Gold | Analytical data layer | In Progress |
-| Database | Azure Database for PostgreSQL Flexible Server | Database hosting | In Progress |
-| Database | PostgreSQL | Relational database | In Progress |
-| Transformation | dbt | Data transformation | Planned |
-| Transformation | SQL | Data modeling and analytics | Planned |
-| Orchestration | Apache Airflow | Pipeline orchestration | Planned |
-| Backend | FastAPI | REST API | Planned |
-| Backend | Python | Backend development | Planned |
-| Frontend | Next.js | Web application | Planned |
-| Frontend | React | UI development | Planned |
-| Frontend | TypeScript | Frontend development | Planned |
-| DevOps | Docker | Containerization | Planned |
-| DevOps | Git | Version control | Implemented |
-| DevOps | GitHub | Source control and collaboration | Implemented |
-| DevOps | GitHub Actions | CI/CD automation | Planned |
+| Layer | Technology | Purpose |
+| ----- | ---------- | ------- |
+| Sources | Youm7 | News source |
+| Sources | Al-Masry Al-Youm | News source |
+| Sources | Masrawy | News source |
+| Scraping & Processing | Python 3.12 | Scraping and processing |
+| Scraping & Processing | Requests | HTTP requests |
+| Scraping & Processing | BeautifulSoup4 | HTML parsing |
+| Storage | Azure Data Lake Storage Gen2 | Data lake storage |
+| Storage | Bronze | Raw data layer |
+| Storage | Silver | Cleaned data layer |
+| Storage | Gold | Analytical data layer |
+| Database | Azure Database for PostgreSQL Flexible Server | Database hosting |
+| Database | PostgreSQL | Relational database |
+| Transformation | dbt | Data transformation |
+| Transformation | SQL | Data modeling and analytics |
+| Orchestration | Apache Airflow | Pipeline orchestration |
+| Backend | FastAPI | REST API |
+| Backend | Python | Backend development |
+| Frontend | Next.js | Web application |
+| Frontend | React | UI development |
+| Frontend | TypeScript | Frontend development |
+| DevOps | Docker | Containerization |
+| DevOps | Git | Version control |
+| DevOps | GitHub | Source control and collaboration |
+| DevOps | GitHub Actions | CI/CD automation |
 
 ## End-to-End Architecture
 
