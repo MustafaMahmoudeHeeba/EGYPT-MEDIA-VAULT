@@ -4,9 +4,6 @@
 
 | Layer | Technology | Purpose |
 | ----- | ---------- | ------- |
-| Sources | Youm7 | News source |
-| Sources | Al-Masry Al-Youm | News source |
-| Sources | Masrawy | News source |
 | Scraping & Processing | Python 3.12 | Scraping and processing |
 | Scraping & Processing | Requests | HTTP requests |
 | Scraping & Processing | BeautifulSoup4 | HTML parsing |
@@ -15,6 +12,7 @@
 | Storage | Silver | Cleaned data layer |
 | Storage | Gold | Analytical data layer |
 | Database | Azure SQL Database | Database hosting |
+| Database | Microsoft SQL Server (T-SQL) | Relational database |
 | Transformation | dbt | Data transformation |
 | Transformation | SQL | Data modeling and analytics |
 | Orchestration | Apache Airflow | Pipeline orchestration |
