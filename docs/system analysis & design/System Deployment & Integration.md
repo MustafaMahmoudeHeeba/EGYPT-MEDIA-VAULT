@@ -14,8 +14,7 @@
 | Storage | Bronze | Raw data layer |
 | Storage | Silver | Cleaned data layer |
 | Storage | Gold | Analytical data layer |
-| Database | Azure Database for PostgreSQL Flexible Server | Database hosting |
-| Database | PostgreSQL | Relational database |
+| Database | Azure SQL Database | Database hosting |
 | Transformation | dbt | Data transformation |
 | Transformation | SQL | Data modeling and analytics |
 | Orchestration | Apache Airflow | Pipeline orchestration |
@@ -42,7 +41,7 @@ flowchart TD
 
     D["Azure Data Lake Storage Gen2<br/>Bronze → Silver → Gold"]
 
-    E["Azure Database for PostgreSQL Flexible Server<br/>PostgreSQL"]
+    E["Azure SQL Database<br/>Microsoft SQL Server (T-SQL)"]
 
     F["dbt + SQL<br/>Data Warehouse / Data Marts"]
 
