@@ -1,0 +1,21 @@
+sources:
+  - name: youm7
+    display_name: اليوم السابع
+    base_url: https://www.youm7.com/
+    enabled: true
+    request_delay_seconds: 1.0
+    timeout_seconds: 10
+
+  - name: almasryalyoum
+    display_name: المصري اليوم
+    base_url: https://www.almasryalyoum.com/
+    enabled: true
+    request_delay_seconds: 1.0
+    timeout_seconds: 10
+
+  - name: masrawy
+    display_name: مصراوي
+    base_url: https://www.masrawy.com/
+    enabled: true
+    request_delay_seconds: 1.0
+    timeout_seconds: 10
