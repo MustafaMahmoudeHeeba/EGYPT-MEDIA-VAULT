@@ -1,0 +1,1172 @@
+
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from pipeline.egypt_media_vault.config.settings import settings
+
+from pipeline.egypt_media_vault.scrapers.source_registry import (
+    create_scrapers,
+)
+
+from pipeline.egypt_media_vault.processing.article_validator import (
+    ArticleValidator,
+)
+from pipeline.egypt_media_vault.processing.article_normalizer import (
+    ArticleNormalizer,
+)
+from pipeline.egypt_media_vault.processing.article_deduplicator import (
+    ArticleDeduplicator,
+)
+from pipeline.egypt_media_vault.processing.story_clusterer import (
+    StoryClusterer,
+)
+
+from pipeline.egypt_media_vault.storage.adls_client import (
+    AzureDataLakeStorage,
+)
+
+
+# =========================================================
+# CONFIGURATION
+# =========================================================
+
+SCRAPERS = create_scrapers()
+
+
+# =========================================================
+# RESULT TRACKING
+# =========================================================
+
+@dataclass
+class SourceStats:
+    scraped: int = 0
+    valid: int = 0
+    rejected: int = 0
+    normalized: int = 0
+    normalization_failed: int = 0
+    duplicates: int = 0
+    unique: int = 0
+    errors: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PipelineResults:
+    raw_articles: list = field(default_factory=list)
+    valid_raw_articles: list = field(default_factory=list)
+    normalized_articles: list = field(default_factory=list)
+    unique_articles: list = field(default_factory=list)
+    duplicate_articles: list = field(default_factory=list)
+    clusters: list = field(default_factory=list)
+
+    validation_issues: list = field(default_factory=list)
+    normalization_errors: list = field(default_factory=list)
+    source_errors: list = field(default_factory=list)
+    storage_errors: list = field(default_factory=list)
+
+    source_stats: dict = field(default_factory=dict)
+
+    run_id: str | None = None
+    bronze_file: str | None = None
+    silver_file: str | None = None
+
+
+# =========================================================
+# DISPLAY HELPERS
+# =========================================================
+
+def print_section(title: str) -> None:
+
+    print("\n" + "=" * 75)
+    print(title)
+    print("=" * 75)
+
+
+def print_issue(issue) -> None:
+
+    severity = getattr(issue, "severity", "UNKNOWN")
+
+    field_name = getattr(
+        issue,
+        "field",
+        getattr(issue, "field_name", "N/A"),
+    )
+
+    message = getattr(issue, "message", str(issue))
+
+    print(
+        f"  [{severity}] "
+        f"Field: {field_name} | "
+        f"{message}"
+    )
+
+
+def get_source_stats(results, source):
+
+    if source not in results.source_stats:
+        results.source_stats[source] = SourceStats()
+
+    return results.source_stats[source]
+
+
+# =========================================================
+# SERIALIZATION HELPERS
+# =========================================================
+
+def serialize_raw_article(raw_article) -> dict:
+    """
+    Convert a RawArticle dataclass into a JSON-compatible dictionary.
+    Datetime values are serialized using ISO 8601.
+    """
+
+    article_data = asdict(raw_article)
+
+    for field_name, value in article_data.items():
+
+        if isinstance(value, datetime):
+            article_data[field_name] = value.isoformat()
+
+    return article_data
+
+
+def serialize_article(article) -> dict:
+    """
+    Convert a normalized Article dataclass into a
+    JSON-compatible dictionary.
+
+    Datetime values are serialized using ISO 8601.
+    """
+
+    article_data = asdict(article)
+
+    for field_name, value in article_data.items():
+
+        if isinstance(value, datetime):
+            article_data[field_name] = value.isoformat()
+
+    return article_data
+
+
+# =========================================================
+# BRONZE STORAGE
+# =========================================================
+
+def run_bronze_storage(results: PipelineResults) -> None:
+    """
+    Store all scraped raw articles in Azure Data Lake Bronze.
+
+    This stage runs immediately after scraping and before validation.
+    Each pipeline execution creates a separate JSON file.
+    """
+
+    print_section("BRONZE: AZURE DATA LAKE STORAGE")
+
+    if not results.raw_articles:
+        print("No raw articles available for Bronze storage.")
+        return
+
+    storage = None
+
+    try:
+
+        if not results.run_id:
+            raise ValueError("Pipeline run ID is missing.")
+
+        print("Connecting to Azure Data Lake Storage...")
+
+        storage = AzureDataLakeStorage()
+
+        ingestion_time = datetime.now(timezone.utc)
+
+        payload = {
+            "metadata": {
+                "project": "EGYPT-MEDIA-VAULT",
+                "layer": "bronze",
+                "run_id": results.run_id,
+                "ingested_at": ingestion_time.isoformat(),
+                "total_articles": len(results.raw_articles),
+            },
+            "articles": [
+                serialize_raw_article(article)
+                for article in results.raw_articles
+            ],
+        }
+
+        filename = f"raw_articles_{results.run_id}.json"
+
+        uploaded_path = storage.upload_json(
+            directory="bronze",
+            filename=filename,
+            data=payload,
+        )
+
+        results.bronze_file = uploaded_path
+
+        print("\nBronze upload completed successfully!")
+        print(f"Uploaded file: {uploaded_path}")
+        print(f"Articles stored: {len(results.raw_articles)}")
+
+    except Exception as exc:
+
+        error_message = (
+            f"Bronze storage failed: "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+        results.storage_errors.append(error_message)
+
+        print("\nBRONZE STORAGE FAILED")
+        print(f"Reason: {exc}")
+
+    finally:
+
+        if storage is not None:
+
+            try:
+                storage.close()
+
+            except Exception as exc:
+
+                error_message = (
+                    f"Azure storage client closing failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+
+                results.storage_errors.append(error_message)
+
+                print(error_message)
+
+
+# =========================================================
+# SILVER STORAGE
+# =========================================================
+
+def run_silver_storage(results: PipelineResults) -> None:
+    """
+    Store validated, normalized, deduplicated, and clustered
+    articles in Azure Data Lake Silver.
+
+    Cross-source articles are preserved to support
+    media coverage analysis.
+    """
+
+    print_section("SILVER: AZURE DATA LAKE STORAGE")
+
+    if not results.unique_articles:
+        print("No unique articles available for Silver storage.")
+        return
+
+    storage = None
+
+    try:
+
+        if not results.run_id:
+            raise ValueError("Pipeline run ID is missing.")
+
+        print("Connecting to Azure Data Lake Storage...")
+
+        storage = AzureDataLakeStorage()
+
+        ingestion_time = datetime.now(timezone.utc)
+
+        total_sources = len({
+            article.source
+            for article in results.unique_articles
+        })
+
+        payload = {
+            "metadata": {
+                "project": "EGYPT-MEDIA-VAULT",
+                "layer": "silver",
+                "run_id": results.run_id,
+                "ingested_at": ingestion_time.isoformat(),
+                "total_articles": len(results.unique_articles),
+                "total_clusters": len(results.clusters),
+                "total_sources": total_sources,
+            },
+            "articles": [
+                serialize_article(article)
+                for article in results.unique_articles
+            ],
+        }
+
+        filename = f"cleaned_articles_{results.run_id}.json"
+
+        uploaded_path = storage.upload_json(
+            directory="silver",
+            filename=filename,
+            data=payload,
+        )
+
+        results.silver_file = uploaded_path
+
+        print("\nSilver upload completed successfully!")
+        print(f"Uploaded file: {uploaded_path}")
+        print(f"Articles stored: {len(results.unique_articles)}")
+        print(f"Clusters included: {len(results.clusters)}")
+        print(f"Sources represented: {total_sources}")
+
+    except Exception as exc:
+
+        error_message = (
+            f"Silver storage failed: "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+        results.storage_errors.append(error_message)
+
+        print("\nSILVER STORAGE FAILED")
+        print(f"Reason: {exc}")
+
+    finally:
+
+        if storage is not None:
+
+            try:
+                storage.close()
+
+            except Exception as exc:
+
+                error_message = (
+                    f"Azure storage client closing failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+
+                results.storage_errors.append(error_message)
+
+                print(error_message)
+
+
+# =========================================================
+# STEP 1: SCRAPING
+# =========================================================
+
+def run_scraping(results: PipelineResults) -> None:
+
+    print_section("STEP 1: SCRAPING")
+
+    for source_name, scraper in SCRAPERS:
+
+        stats = get_source_stats(results, source_name)
+
+        print(f"\nSource: {source_name}")
+        print("-" * 60)
+
+        try:
+
+            scraped_articles = scraper.scrape()
+
+            if scraped_articles is None:
+                scraped_articles = []
+
+            results.raw_articles.extend(scraped_articles)
+
+            stats.scraped = len(scraped_articles)
+
+            print(
+                f"Scraping completed: {stats.scraped} articles"
+            )
+
+        except Exception as exc:
+
+            error_message = (
+                f"{source_name}: {type(exc).__name__}: {exc}"
+            )
+
+            results.source_errors.append(error_message)
+            stats.errors.append(error_message)
+
+            print("SCRAPING FAILED")
+            print(f"Reason: {exc}")
+
+            continue
+
+    print("\nScraping Summary:")
+
+    for source_name, stats in results.source_stats.items():
+
+        print(
+            f"{source_name}: "
+            f"{stats.scraped} articles"
+        )
+
+    print(
+        f"\nTotal raw articles: "
+        f"{len(results.raw_articles)}"
+    )
+
+
+# =========================================================
+# STEP 2: VALIDATION
+# =========================================================
+
+def run_validation(results: PipelineResults) -> None:
+
+    print_section("STEP 2: VALIDATION")
+
+    validator = ArticleValidator()
+
+    for index, raw_article in enumerate(
+        results.raw_articles,
+        start=1,
+    ):
+
+        source = raw_article.source
+        stats = get_source_stats(results, source)
+
+        print(
+            f"\n[{index}/{len(results.raw_articles)}] "
+            f"{source}: {raw_article.title[:90]}"
+        )
+
+        try:
+
+            issues = validator.validate(raw_article)
+
+            results.validation_issues.extend(issues)
+
+            if validator.is_valid(issues):
+
+                results.valid_raw_articles.append(
+                    raw_article
+                )
+
+                stats.valid += 1
+
+                print("  VALID")
+
+            else:
+
+                stats.rejected += 1
+
+                print("  REJECTED")
+
+                for issue in issues:
+                    print_issue(issue)
+
+        except Exception as exc:
+
+            stats.rejected += 1
+
+            error_message = (
+                f"{source} | {raw_article.url} | {exc}"
+            )
+
+            results.validation_issues.append(
+                error_message
+            )
+
+            print(f"  VALIDATION ERROR: {exc}")
+
+    print("\nValidation Summary:")
+
+    print(
+        f"Articles checked: "
+        f"{len(results.raw_articles)}"
+    )
+
+    print(
+        f"Valid articles: "
+        f"{len(results.valid_raw_articles)}"
+    )
+
+    rejected = (
+        len(results.raw_articles)
+        - len(results.valid_raw_articles)
+    )
+
+    print(f"Rejected articles: {rejected}")
+
+    print(
+        f"Total validation issues: "
+        f"{len(results.validation_issues)}"
+    )
+
+
+# =========================================================
+# STEP 3: NORMALIZATION
+# =========================================================
+
+def run_normalization(results: PipelineResults) -> None:
+
+    print_section("STEP 3: NORMALIZATION")
+
+    normalizer = ArticleNormalizer()
+
+    for index, raw_article in enumerate(
+        results.valid_raw_articles,
+        start=1,
+    ):
+
+        stats = get_source_stats(
+            results,
+            raw_article.source,
+        )
+
+        try:
+
+            article = normalizer.normalize(raw_article)
+
+            results.normalized_articles.append(article)
+
+            stats.normalized += 1
+
+            print(
+                f"[{index}] NORMALIZED: "
+                f"{article.source} | "
+                f"{article.title[:75]}"
+            )
+
+        except Exception as exc:
+
+            stats.normalization_failed += 1
+
+            error = {
+                "source": raw_article.source,
+                "url": raw_article.url,
+                "error": str(exc),
+            }
+
+            results.normalization_errors.append(error)
+
+            print(
+                f"[{index}] NORMALIZATION FAILED: "
+                f"{raw_article.source}"
+            )
+
+            print(f"Reason: {exc}")
+
+    print("\nNormalization Summary:")
+
+    print(
+        f"Input articles: "
+        f"{len(results.valid_raw_articles)}"
+    )
+
+    print(
+        f"Successfully normalized: "
+        f"{len(results.normalized_articles)}"
+    )
+
+    print(
+        f"Normalization failures: "
+        f"{len(results.normalization_errors)}"
+    )
+
+
+# =========================================================
+# STEP 4: DEDUPLICATION
+# =========================================================
+
+def run_deduplication(results: PipelineResults) -> None:
+
+    print_section("STEP 4: DEDUPLICATION")
+
+    deduplicator = ArticleDeduplicator()
+
+    (
+        results.unique_articles,
+        results.duplicate_articles,
+    ) = deduplicator.deduplicate(
+        results.normalized_articles
+    )
+
+    unique_ids = {
+        id(article)
+        for article in results.unique_articles
+    }
+
+    duplicate_ids = {
+        id(article)
+        for article in results.duplicate_articles
+    }
+
+    for article in results.normalized_articles:
+
+        stats = get_source_stats(
+            results,
+            article.source,
+        )
+
+        if id(article) in unique_ids:
+            stats.unique += 1
+
+        elif id(article) in duplicate_ids:
+            stats.duplicates += 1
+
+    print(
+        f"Before deduplication: "
+        f"{len(results.normalized_articles)}"
+    )
+
+    print(
+        f"Unique articles: "
+        f"{len(results.unique_articles)}"
+    )
+
+    print(
+        f"Duplicate articles: "
+        f"{len(results.duplicate_articles)}"
+    )
+
+    print("\nDuplicate Details:")
+
+    for article in results.duplicate_articles:
+
+        print(
+            f"- {article.source}: "
+            f"{article.title[:100]}"
+        )
+
+    accounting_valid = (
+        len(results.unique_articles)
+        + len(results.duplicate_articles)
+        == len(results.normalized_articles)
+    )
+
+    print(
+        f"\nDeduplication accounting valid: "
+        f"{accounting_valid}"
+    )
+
+
+# =========================================================
+# STEP 5: STORY CLUSTERING
+# =========================================================
+
+def run_story_clustering(results: PipelineResults) -> None:
+
+    print_section("STEP 5: STORY CLUSTERING")
+
+    if not results.unique_articles:
+        print("No unique articles available for clustering.")
+        return
+
+    threshold = settings.story_similarity_threshold
+
+    print(
+        f"Configured similarity threshold: {threshold}"
+    )
+
+    clusterer = StoryClusterer(
+        similarity_threshold=threshold
+    )
+
+    results.clusters = clusterer.cluster(
+        results.unique_articles
+    )
+
+    print(
+        f"\nArticles submitted: "
+        f"{len(results.unique_articles)}"
+    )
+
+    print(
+        f"Clusters created: "
+        f"{len(results.clusters)}"
+    )
+
+
+# =========================================================
+# ARTICLE ID HELPER
+# =========================================================
+
+def clusterer_id(article):
+    """
+    Generate the same article ID used by StoryClusterer.
+    """
+
+    if article.canonical_url_hash:
+        return article.canonical_url_hash
+
+    import hashlib
+
+    return hashlib.sha256(
+        article.effective_canonical_url.encode("utf-8")
+    ).hexdigest()
+
+
+# =========================================================
+# STEP 6: CLUSTER DETAILS
+# =========================================================
+
+def print_cluster_details(results: PipelineResults) -> None:
+
+    print_section("STEP 6: CLUSTER DETAILS")
+
+    articles_by_id = {}
+
+    for article in results.unique_articles:
+
+        article_id = clusterer_id(article)
+
+        articles_by_id[article_id] = article
+
+    for index, cluster in enumerate(
+        results.clusters,
+        start=1,
+    ):
+
+        cluster_articles = [
+            articles_by_id[article_id]
+            for article_id in cluster.articles
+            if article_id in articles_by_id
+        ]
+
+        sources = sorted({
+            article.source
+            for article in cluster_articles
+        })
+
+        print(f"\nCLUSTER {index}")
+        print("-" * 75)
+
+        print(f"ID: {cluster.cluster_id}")
+
+        print(
+            f"Representative: "
+            f"{cluster.representative_title}"
+        )
+
+        print(
+            f"Articles: {cluster.article_count}"
+        )
+
+        print(
+            f"Sources ({len(sources)}): "
+            f"{', '.join(sources)}"
+        )
+
+        for article in cluster_articles:
+
+            print(
+                f"  - [{article.source}] "
+                f"{article.title}"
+            )
+
+
+# =========================================================
+# STEP 7: STORY COVERAGE
+# =========================================================
+
+def print_story_coverage(results: PipelineResults) -> None:
+
+    print_section("STEP 7: STORY COVERAGE")
+
+    articles_by_id = {
+        clusterer_id(article): article
+        for article in results.unique_articles
+    }
+
+    for cluster in results.clusters:
+
+        cluster_articles = [
+            articles_by_id[article_id]
+            for article_id in cluster.articles
+            if article_id in articles_by_id
+        ]
+
+        sources = {
+            article.source
+            for article in cluster_articles
+        }
+
+        publication_dates = [
+            article.publication_date
+            for article in cluster_articles
+        ]
+
+        earliest_date = (
+            min(publication_dates)
+            if publication_dates
+            else None
+        )
+
+        latest_date = (
+            max(publication_dates)
+            if publication_dates
+            else None
+        )
+
+        print(
+            f"\nStory: {cluster.representative_title}"
+        )
+
+        print(f"Publishing websites: {len(sources)}")
+
+        print(
+            f"Sources: {', '.join(sorted(sources))}"
+        )
+
+        print(
+            f"Articles: {len(cluster_articles)}"
+        )
+
+        print(f"Earliest publication: {earliest_date}")
+        print(f"Latest publication: {latest_date}")
+
+
+# =========================================================
+# STEP 8: INTEGRITY CHECKS
+# =========================================================
+
+def run_integrity_checks(results: PipelineResults) -> dict:
+
+    print_section("STEP 8: FINAL INTEGRITY CHECKS")
+
+    checks = {}
+
+    checks["Deduplication accounting"] = (
+        len(results.unique_articles)
+        + len(results.duplicate_articles)
+        == len(results.normalized_articles)
+    )
+
+    checks["All unique articles assigned"] = all(
+        article.story_cluster_id
+        for article in results.unique_articles
+    )
+
+    cluster_ids = [
+        cluster.cluster_id
+        for cluster in results.clusters
+    ]
+
+    checks["Cluster IDs unique"] = (
+        len(cluster_ids) == len(set(cluster_ids))
+    )
+
+    known_article_ids = {
+        clusterer_id(article)
+        for article in results.unique_articles
+    }
+
+    cluster_article_ids = [
+        article_id
+        for cluster in results.clusters
+        for article_id in cluster.articles
+    ]
+
+    checks["All cluster article IDs exist"] = all(
+        article_id in known_article_ids
+        for article_id in cluster_article_ids
+    )
+
+    checks["No article appears in multiple clusters"] = (
+        len(cluster_article_ids)
+        == len(set(cluster_article_ids))
+    )
+
+    checks["All unique articles accounted for"] = (
+        len(cluster_article_ids)
+        == len(results.unique_articles)
+        and set(cluster_article_ids)
+        == known_article_ids
+    )
+
+    article_cluster_lookup = {
+        clusterer_id(article): article.story_cluster_id
+        for article in results.unique_articles
+    }
+
+    membership_matches = True
+
+    for cluster in results.clusters:
+
+        for article_id in cluster.articles:
+
+            if (
+                article_cluster_lookup.get(article_id)
+                != cluster.cluster_id
+            ):
+                membership_matches = False
+
+    checks["Article cluster IDs match membership"] = (
+        membership_matches
+    )
+
+    for check_name, passed in checks.items():
+
+        status = "PASS" if passed else "FAIL"
+
+        print(f"[{status}] {check_name}")
+
+    return checks
+
+
+# =========================================================
+# STEP 9: SOURCE SUMMARY
+# =========================================================
+
+def print_source_summary(results: PipelineResults) -> None:
+
+    print_section("STEP 9: SOURCE SUMMARY")
+
+    print(
+        f"{'SOURCE':<20}"
+        f"{'SCRAPED':>10}"
+        f"{'VALID':>10}"
+        f"{'REJECTED':>11}"
+        f"{'NORMALIZED':>13}"
+        f"{'UNIQUE':>10}"
+        f"{'DUPLICATES':>12}"
+    )
+
+    print("-" * 86)
+
+    for source, stats in results.source_stats.items():
+
+        print(
+            f"{source:<20}"
+            f"{stats.scraped:>10}"
+            f"{stats.valid:>10}"
+            f"{stats.rejected:>11}"
+            f"{stats.normalized:>13}"
+            f"{stats.unique:>10}"
+            f"{stats.duplicates:>12}"
+        )
+
+
+# =========================================================
+# MAIN PIPELINE
+# =========================================================
+
+def main():
+
+    print_section(
+        "EGYPT-MEDIA-VAULT - FULL PIPELINE INTEGRATION TEST"
+    )
+
+    print("Environment:", settings.app_env)
+    print("Application:", settings.app_name)
+
+    print(
+        "Similarity threshold:",
+        settings.story_similarity_threshold,
+    )
+
+    results = PipelineResults()
+
+    # Generate one ID shared by all layers in this run.
+    results.run_id = (
+        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+        + "_"
+        + uuid4().hex[:8]
+    )
+
+    print("Pipeline Run ID:", results.run_id)
+
+    # -----------------------------------------------------
+    # STEP 1: SCRAPING
+    # -----------------------------------------------------
+
+    run_scraping(results)
+
+    if not results.raw_articles:
+
+        print_section("TEST STOPPED")
+        print("No raw articles were collected.")
+
+        return False
+
+    # -----------------------------------------------------
+    # STEP 1.5: BRONZE STORAGE
+    # -----------------------------------------------------
+
+    run_bronze_storage(results)
+
+    # -----------------------------------------------------
+    # STEP 2: VALIDATION
+    # -----------------------------------------------------
+
+    run_validation(results)
+
+    if not results.valid_raw_articles:
+
+        print_section("TEST STOPPED")
+        print("No valid raw articles available.")
+
+        return False
+
+    # -----------------------------------------------------
+    # STEP 3: NORMALIZATION
+    # -----------------------------------------------------
+
+    run_normalization(results)
+
+    if not results.normalized_articles:
+
+        print_section("TEST STOPPED")
+        print("No articles were successfully normalized.")
+
+        return False
+
+    # -----------------------------------------------------
+    # STEP 4: DEDUPLICATION
+    # -----------------------------------------------------
+
+    run_deduplication(results)
+
+    if not results.unique_articles:
+
+        print_section("TEST STOPPED")
+        print("No unique articles available.")
+
+        return False
+
+    # -----------------------------------------------------
+    # STEP 5: STORY CLUSTERING
+    # -----------------------------------------------------
+
+    run_story_clustering(results)
+
+    # -----------------------------------------------------
+    # STEP 5.5: SILVER STORAGE
+    # -----------------------------------------------------
+
+    run_silver_storage(results)
+
+    # -----------------------------------------------------
+    # STEP 6: CLUSTER DETAILS
+    # -----------------------------------------------------
+
+    print_cluster_details(results)
+
+    # -----------------------------------------------------
+    # STEP 7: STORY COVERAGE
+    # -----------------------------------------------------
+
+    print_story_coverage(results)
+
+    # -----------------------------------------------------
+    # STEP 8: INTEGRITY CHECKS
+    # -----------------------------------------------------
+
+    checks = run_integrity_checks(results)
+
+    # -----------------------------------------------------
+    # STEP 9: SOURCE SUMMARY
+    # -----------------------------------------------------
+
+    print_source_summary(results)
+
+    # -----------------------------------------------------
+    # FINAL PIPELINE REPORT
+    # -----------------------------------------------------
+
+    print_section("FINAL PIPELINE REPORT")
+
+    print(
+        f"Pipeline Run ID: "
+        f"{results.run_id}"
+    )
+
+    print(
+        f"Raw articles: "
+        f"{len(results.raw_articles)}"
+    )
+
+    print(
+        f"Valid articles: "
+        f"{len(results.valid_raw_articles)}"
+    )
+
+    print(
+        f"Normalized articles: "
+        f"{len(results.normalized_articles)}"
+    )
+
+    print(
+        f"Unique articles: "
+        f"{len(results.unique_articles)}"
+    )
+
+    print(
+        f"Duplicates: "
+        f"{len(results.duplicate_articles)}"
+    )
+
+    print(
+        f"Story clusters: "
+        f"{len(results.clusters)}"
+    )
+
+    print(
+        f"Source failures: "
+        f"{len(results.source_errors)}"
+    )
+
+    print(
+        f"Normalization failures: "
+        f"{len(results.normalization_errors)}"
+    )
+
+    print(
+        f"Bronze file: "
+        f"{results.bronze_file or 'NOT UPLOADED'}"
+    )
+
+    print(
+        f"Silver file: "
+        f"{results.silver_file or 'NOT UPLOADED'}"
+    )
+
+    print(
+        f"Storage failures: "
+        f"{len(results.storage_errors)}"
+    )
+
+    for error in results.storage_errors:
+        print(f"- {error}")
+
+    # -----------------------------------------------------
+    # FINAL STATUS
+    # -----------------------------------------------------
+
+    failed_checks = [
+        name
+        for name, passed in checks.items()
+        if not passed
+    ]
+
+    if failed_checks:
+
+        print("\nRESULT: FAILED")
+
+        for name in failed_checks:
+            print(f"- {name}")
+
+        return False
+
+    if results.storage_errors:
+
+        print("\nRESULT: FAILED - STORAGE ERROR")
+
+        return False
+
+    if results.source_errors or results.normalization_errors:
+
+        print("\nRESULT: PASSED WITH WARNINGS")
+
+    elif any(
+        stats.rejected > 0
+        for stats in results.source_stats.values()
+    ):
+
+        print("\nRESULT: PASSED WITH DATA QUALITY REJECTIONS")
+
+    else:
+
+        print("\nRESULT: PASSED")
+
+    print_section("FULL PIPELINE TEST COMPLETED")
+
+    return True
+
+
+if __name__ == "__main__":
+
+    success = main()
+
+    if not success:
+        raise SystemExit(1)
