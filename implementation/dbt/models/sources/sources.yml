@@ -1,0 +1,267 @@
+version: 2
+sources:
+- name: warehouse
+  description: Existing EGYPT-MEDIA-VAULT star schema (dbo) loaded by the Python pipeline. dbt only reads it. Staging tables (raw_articles, raw_article_issues) and sysdiagrams are intentionally not declared.
+  schema: dbo
+  tables:
+  - name: dim_article
+    description: 'Article dimension (one row per article_id): title, URLs, description, content, image and link availability.'
+    columns:
+    - name: article_key
+      description: Surrogate key of the article.
+      data_tests:
+      - not_null
+      - unique
+    - name: article_id
+      description: Natural article identifier assigned by the pipeline.
+    - name: article_title
+      description: Article headline (Arabic text, NVARCHAR).
+    - name: original_url
+      description: Original article URL.
+    - name: canonical_url_hash
+      description: 64-character hash (CHAR 64) of the canonical URL.
+    - name: article_description
+      description: Article summary/description.
+    - name: article_content
+      description: Full article text. Only carried in stg_dim_article; never exposed in marts.
+    - name: article_image_url
+      description: Image URL, if any.
+    - name: link_availability
+      description: Link availability status reported by the pipeline.
+    - name: warehouse_created_at
+      description: When the row was first created in the warehouse.
+    - name: warehouse_updated_at
+      description: When the row was last updated in the warehouse.
+  - name: dim_article_flag
+    description: 'Junk dimension of article quality flags: timestamp validity and syndication indicator.'
+    columns:
+    - name: article_flag_key
+      description: Surrogate key of the flag combination.
+      data_tests:
+      - not_null
+      - unique
+    - name: timestamp_validity
+      description: Validity classification of the article publication timestamp.
+    - name: syndication_indicator
+      description: Syndication status (for example 'Not syndicated').
+  - name: dim_author
+    description: Author dimension (one row per distinct author_name).
+    columns:
+    - name: author_key
+      description: Surrogate key of the author.
+      data_tests:
+      - not_null
+      - unique
+    - name: author_name
+      description: Author name as stored in the warehouse.
+  - name: dim_category
+    description: Category dimension (one row per distinct category_name).
+    columns:
+    - name: category_key
+      description: Surrogate key of the category.
+      data_tests:
+      - not_null
+      - unique
+    - name: category_name
+      description: Category name.
+  - name: dim_collection_outcome
+    description: Lookup of source-collection outcomes and the pipeline step that failed, if any.
+    columns:
+    - name: collection_outcome_key
+      description: Surrogate key of the outcome.
+      data_tests:
+      - not_null
+      - unique
+    - name: collection_outcome
+      description: Outcome of a source collection.
+    - name: failed_step
+      description: Pipeline step that failed (as recorded by the pipeline).
+  - name: dim_date
+    description: Calendar dimension keyed by date_key; includes an 'unknown' member (is_unknown = 1).
+    columns:
+    - name: date_key
+      description: Surrogate key of the date.
+      data_tests:
+      - not_null
+      - unique
+    - name: full_date
+      description: Calendar date (NULL for the unknown member).
+    - name: day_number
+      description: Day of month.
+    - name: day_name
+      description: Day name.
+    - name: day_of_week
+      description: Day-of-week number as defined by the warehouse (numbering convention is the pipeline's).
+    - name: week_number
+      description: Week number.
+    - name: month_number
+      description: Month number.
+    - name: month_name
+      description: Month name.
+    - name: quarter_number
+      description: Quarter number.
+    - name: year_number
+      description: Year.
+    - name: is_weekend
+      description: Weekend flag as defined by the warehouse calendar.
+    - name: is_unknown
+      description: 1 for the 'unknown' member.
+  - name: dim_run_status
+    description: Lookup of pipeline run statuses with their definitions.
+    columns:
+    - name: run_status_key
+      description: Surrogate key of the run status.
+      data_tests:
+      - not_null
+      - unique
+    - name: run_status
+      description: Pipeline run status (for example Success).
+    - name: status_definition
+      description: Definition of the run status.
+  - name: dim_source
+    description: Type 2 news-source dimension. One source_id can have several versions (source_key); only one is current.
+    columns:
+    - name: source_key
+      description: Surrogate key of a source VERSION (Type 2).
+      data_tests:
+      - not_null
+      - unique
+    - name: source_id
+      description: Natural source identifier (for example youm7). Use this, not source_key, to count publishers.
+    - name: source_name
+      description: Display name of the source.
+    - name: enabled_status
+      description: Whether the source is enabled in this version.
+    - name: configuration
+      description: configuration
+    - name: access_conditions
+      description: access_conditions
+    - name: version_effective_from
+      description: Start of this source version.
+    - name: version_effective_to
+      description: End of this source version (NULL when open).
+    - name: is_current
+      description: 1 for the current source version.
+  - name: dim_story
+    description: Story dimension (one row per Story ID). Contains an 'UNKNOWN' sentinel and may contain stories with no article rows.
+    columns:
+    - name: story_key
+      description: Surrogate key of the story.
+      data_tests:
+      - not_null
+      - unique
+    - name: story_id
+      description: Natural Story ID assigned by the pipeline.
+    - name: representative_title
+      description: Representative story title.
+    - name: warehouse_created_at
+      description: When the row was first created in the warehouse.
+    - name: warehouse_updated_at
+      description: When the row was last updated in the warehouse.
+  - name: dim_time_of_day
+    description: Time-of-day dimension keyed by time_key (second grain); includes an 'unknown' member.
+    columns:
+    - name: time_key
+      description: Surrogate key of the time of day.
+      data_tests:
+      - not_null
+      - unique
+    - name: full_time
+      description: Time of day.
+    - name: hour_number
+      description: Hour 0-23.
+    - name: minute_number
+      description: Minute.
+    - name: second_number
+      description: Second.
+    - name: hour_12
+      description: Hour 1-12.
+    - name: am_pm
+      description: AM/PM.
+    - name: day_period
+      description: Day period label (for example Morning).
+    - name: is_unknown
+      description: 1 for the 'unknown' member.
+  - name: fact_news_articles
+    description: Article-grain fact. One row per article_key, pointing at its story, source version, category, author, flags, dates and time.
+    columns:
+    - name: article_key
+      description: Surrogate key of the article.
+      data_tests:
+      - not_null
+      - unique
+    - name: source_key
+      description: Surrogate key of a source VERSION (Type 2).
+    - name: story_key
+      description: Surrogate key of the story.
+    - name: category_key
+      description: Surrogate key of the category.
+    - name: author_key
+      description: Surrogate key of the author.
+    - name: article_flag_key
+      description: Surrogate key of the flag combination.
+    - name: publication_date_key
+      description: Key of the publication date in dim_date.
+    - name: publication_time_of_day_key
+      description: Key of the publication time in dim_time_of_day.
+    - name: ingestion_date_key
+      description: Key of the ingestion date in dim_date.
+    - name: article_count
+      description: Row-level measure on the fact (expected to be 1). NOT the number of articles in a story.
+    - name: publication_timestamp
+      description: Article publication timestamp (NULL when unknown).
+    - name: ingestion_timestamp
+      description: When the pipeline ingested the article.
+    loaded_at_field: ingestion_timestamp
+    freshness:
+      warn_after:
+        count: 48
+        period: hour
+  - name: fact_pipeline_run
+    description: Pipeline-run-grain fact. One row per run_id.
+    columns:
+    - name: run_id
+      description: Pipeline run identifier.
+      data_tests:
+      - not_null
+      - unique
+    - name: run_date_key
+      description: Key of the run date in dim_date.
+    - name: run_status_key
+      description: Surrogate key of the run status.
+    - name: run_count
+      description: Row-level measure (expected to be 1).
+    - name: scheduled_timestamp
+      description: Scheduled run time.
+    - name: start_timestamp
+      description: Actual run start.
+    - name: end_timestamp
+      description: Actual run end.
+    - name: missed_reason
+      description: Reason a scheduled run was missed.
+    loaded_at_field: start_timestamp
+    freshness:
+      warn_after:
+        count: 48
+        period: hour
+  - name: fact_source_collection
+    description: Run x source-grain fact. One row per (run_id, source_key) with collection counts and outcome.
+    columns:
+    - name: run_id
+      description: Pipeline run identifier.
+    - name: source_key
+      description: Surrogate key of a source VERSION (Type 2).
+    - name: run_date_key
+      description: Key of the run date in dim_date.
+    - name: collection_outcome_key
+      description: Surrogate key of the outcome.
+    - name: attempt_count
+      description: Number of collection attempts.
+    - name: articles_collected_count
+      description: Articles collected from the source in the run (NULL if unknown).
+    - name: articles_rejected_count
+      description: Articles rejected during validation.
+    - name: duplicate_record_count
+      description: Duplicate records detected.
+    - name: error_description
+      description: Error text for a failed collection.

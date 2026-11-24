@@ -1,0 +1,43 @@
+name: egypt_media_vault
+version: "1.0.0"
+config-version: 2
+
+profile: egypt_media_vault
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - target
+  - dbt_packages
+
+vars:
+  # Labels used to decide what counts as a success. Compared case-insensitively.
+  # If your warehouse uses different words, change them here (see README, "Assumptions").
+  success_outcome_label: "Succeeded"      # dim_collection_outcome.collection_outcome
+  success_run_status_label: "Success"   # dim_run_status.run_status
+  # Story ID the pipeline uses for articles without a real story (sentinel member of dim_story).
+  unknown_story_id: "UNKNOWN"
+  # Publication timestamps further in the future than this are flagged by a (warn-level) test.
+  # The slack also absorbs a UTC/local-time offset in the stored timestamps.
+  future_timestamp_tolerance_hours: 24
+
+models:
+  egypt_media_vault:
+    staging:
+      +materialized: view
+      +schema: dbt_staging
+    intermediate:
+      +materialized: view
+      +schema: dbt_intermediate
+    marts:
+      core:
+        +materialized: table
+        +schema: core
+      analytics:
+        +materialized: table
+        +schema: analytics
