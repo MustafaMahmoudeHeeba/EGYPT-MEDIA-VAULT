@@ -1,0 +1,4 @@
+# Keep dbt-core and dbt-sqlserver on the same minor version.
+# NOT verified against PyPI in the delivery environment -- confirm with `pip index versions dbt-sqlserver`.
+dbt-core~=1.9.0
+dbt-sqlserver~=1.9.0

@@ -1,0 +1,176 @@
+version: 2
+models:
+- name: dim_sources
+  description: One row per publisher (source_id), described by its current source version.
+  columns:
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+    - unique
+    - accepted_values:
+        values:
+        - youm7
+        - almasryalyoum
+        - masrawy
+        config:
+          severity: warn
+  - name: source_key
+    description: Surrogate key of the version used for the description (informational).
+    data_tests:
+    - not_null
+    - unique
+  - name: source_name
+    description: Publisher name.
+    data_tests:
+    - not_null
+  - name: is_enabled
+    description: 1 when the source is enabled.
+  - name: is_current_version
+    description: 1 when the described version is flagged current.
+  - name: version_effective_from
+    description: Start of the described version.
+  - name: version_count
+    description: Number of Type 2 versions of this source.
+- name: dim_stories
+  description: One row per dim_story row with article/source counts and story_membership_status (active, no_articles, unknown_sentinel). Nothing is dropped.
+  columns:
+  - name: story_key
+    description: Story key.
+    data_tests:
+    - not_null
+    - unique
+  - name: story_id
+    description: Story ID.
+    data_tests:
+    - not_null
+    - unique
+  - name: story_title
+    description: Representative title.
+  - name: article_count
+    description: Articles in the story.
+    data_tests:
+    - not_null
+    - expression_is_true:
+        expression: article_count >= 0
+  - name: source_count
+    description: Distinct publishers (source_id) in the story.
+    data_tests:
+    - not_null
+    - expression_is_true:
+        expression: source_count >= 0
+  - name: articles_missing_publication_time
+    description: Articles of the story without a publication timestamp.
+  - name: first_published_at
+    description: Earliest publication timestamp in the story.
+  - name: last_published_at
+    description: Latest publication timestamp in the story.
+  - name: story_membership_status
+    description: active = has articles; no_articles = no article row references it; unknown_sentinel = the UNKNOWN placeholder.
+    data_tests:
+    - not_null
+    - accepted_values:
+        values:
+        - active
+        - no_articles
+        - unknown_sentinel
+  - name: warehouse_created_at
+    description: Row creation time in the warehouse.
+  - name: warehouse_updated_at
+    description: Row update time in the warehouse.
+  data_tests:
+  - expression_is_true:
+      expression: source_count <= article_count
+- name: fct_articles
+  description: Dashboard-ready article feed (no full text) with story context.
+  columns:
+  - name: article_key
+    description: Article key.
+    data_tests:
+    - not_null
+    - unique
+  - name: article_id
+    description: Article id.
+    data_tests:
+    - not_null
+    - unique
+  - name: article_title
+    description: Headline.
+  - name: original_url
+    description: Original URL.
+  - name: canonical_url_hash
+    description: Canonical URL hash.
+  - name: link_availability
+    description: Link availability.
+  - name: has_content
+    description: 1 when content exists.
+  - name: has_description
+    description: 1 when description exists.
+  - name: has_image
+    description: 1 when image exists.
+  - name: story_key
+    description: Story key.
+    data_tests:
+    - not_null
+    - relationships:
+        to: ref('dim_stories')
+        field: story_key
+  - name: story_id
+    description: Story ID.
+  - name: story_title
+    description: Story title.
+  - name: story_membership_status
+    description: Status of the article's story.
+  - name: story_article_count
+    description: Articles in the article's story.
+  - name: story_source_count
+    description: Distinct publishers in the article's story.
+  - name: is_multi_source_story
+    description: 1 when the story has more than one publisher.
+  - name: source_key
+    description: Source version key.
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+    - relationships:
+        to: ref('dim_sources')
+        field: source_id
+  - name: source_name
+    description: Publisher name.
+  - name: category_key
+    description: Category key.
+  - name: category_name
+    description: Category.
+    data_tests:
+    - not_null
+  - name: author_key
+    description: Author key.
+  - name: author_name
+    description: Author.
+  - name: timestamp_validity
+    description: Timestamp validity.
+  - name: syndication_indicator
+    description: Syndication indicator.
+  - name: publication_timestamp
+    description: Publication timestamp.
+  - name: has_publication_time
+    description: 1 when a publication timestamp exists.
+  - name: publication_date
+    description: Publication date.
+  - name: publication_hour
+    description: Publication hour.
+  - name: publication_day_name
+    description: Day name.
+  - name: publication_iso_day_of_week
+    description: ISO weekday 1-7.
+  - name: publication_is_weekend
+    description: Weekend flag.
+  - name: publication_day_period
+    description: Day period.
+  - name: ingestion_timestamp
+    description: Ingestion timestamp.
+  - name: ingestion_date
+    description: Ingestion date.
+  - name: article_updated_at
+    description: Last warehouse update of the article row.

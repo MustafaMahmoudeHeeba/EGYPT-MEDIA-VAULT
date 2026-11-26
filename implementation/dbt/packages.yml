@@ -1,0 +1,3 @@
+# No external dbt packages are used. Generic tests (unique_combination, expression_is_true) and
+# helper macros live in this project, which avoids dbt-utils / tsql_utils version coupling on SQL Server.
+packages: []

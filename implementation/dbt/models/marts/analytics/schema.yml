@@ -1,0 +1,490 @@
+version: 2
+models:
+- name: mart_story_coverage
+  description: 'MAIN KPI. One row per active story: distinct publishers, publishers list, first/last publication, coverage gap, first source, article count.'
+  columns:
+  - name: story_id
+    description: Story ID.
+    data_tests:
+    - not_null
+    - unique
+  - name: story_key
+    description: Story key.
+    data_tests:
+    - not_null
+    - unique
+  - name: story_title
+    description: Representative title.
+  - name: article_count
+    description: Articles in the story.
+    data_tests:
+    - not_null
+  - name: source_count
+    description: Distinct publishing websites.
+    data_tests:
+    - not_null
+    - expression_is_true:
+        expression: source_count >= 1
+  - name: is_multi_source
+    description: 1 when source_count > 1.
+  - name: publisher_ids
+    description: Publishers, earliest first publication first.
+  - name: publisher_names
+    description: Publisher names in the same order.
+  - name: first_published_at
+    description: Earliest publication across all publishers.
+  - name: last_published_at
+    description: Latest publication across all publishers.
+  - name: coverage_gap_minutes
+    description: Minutes between first and last publication (NULL without timestamps).
+  - name: first_source_id
+    description: Publisher of the earliest article.
+  - name: first_source_name
+    description: Name of the first publisher.
+  - name: articles_missing_publication_time
+    description: Articles without a timestamp (excluded from timing).
+  - name: coverage_rank
+    description: Dense rank by source_count then article_count (1 = most widely covered).
+  data_tests:
+  - expression_is_true:
+      expression: first_published_at <= last_published_at
+  - expression_is_true:
+      expression: source_count <= article_count
+- name: mart_story_source_timeline
+  description: 'Active story x publisher: per-publisher first/last publication and lag behind the first publisher.'
+  columns:
+  - name: story_id
+    description: Story ID.
+    data_tests:
+    - not_null
+  - name: story_key
+    description: Story key.
+    data_tests:
+    - not_null
+    - relationships:
+        to: ref('mart_story_coverage')
+        field: story_key
+  - name: story_title
+    description: Story title.
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+    - relationships:
+        to: ref('dim_sources')
+        field: source_id
+  - name: source_name
+    description: Publisher name.
+  - name: story_source_count
+    description: Distinct publishers in the story.
+  - name: article_count
+    description: Articles of this publisher in the story.
+  - name: articles_missing_publication_time
+    description: Of those, articles without a timestamp.
+  - name: first_published_at
+    description: This publisher's first publication.
+  - name: last_published_at
+    description: This publisher's last publication.
+  - name: story_first_published_at
+    description: Story's earliest publication.
+  - name: minutes_after_story_first_publication
+    description: Minutes this publisher's first article came after the story's first article.
+  - name: publication_order
+    description: 1 = first publisher; untimed publishers last.
+  - name: is_first_source
+    description: 1 for the first publisher.
+  data_tests:
+  - unique_combination:
+      combination_of_columns:
+      - story_key
+      - source_id
+  - expression_is_true:
+      expression: minutes_after_story_first_publication >= 0
+- name: mart_story_kpis
+  description: Single-row headline story KPIs (active stories only).
+  columns:
+  - name: kpi_scope
+    description: Always 'overall'.
+    data_tests:
+    - not_null
+    - unique
+  - name: total_stories
+    description: Active stories.
+  - name: multi_source_stories
+    description: Active stories with more than one publisher.
+  - name: single_source_stories
+    description: Active stories with exactly one publisher.
+  - name: multi_source_story_pct
+    description: Share of multi-source stories.
+  - name: avg_publishers_per_story
+    description: Average distinct publishers per active story.
+  - name: max_publishers_per_story
+    description: Largest publisher count of any story.
+  - name: total_articles_in_stories
+    description: Articles in active stories.
+  - name: avg_articles_per_story
+    description: Average articles per active story.
+  - name: avg_coverage_gap_minutes_multi_source
+    description: Average coverage gap over multi-source stories.
+  - name: stories_without_articles
+    description: dim_story rows with no articles (reported, not counted as stories).
+  - name: unknown_sentinel_stories
+    description: UNKNOWN sentinel rows (reported, not counted).
+  - name: stories_in_dimension
+    description: All dim_story rows.
+  - name: generated_at_utc
+    description: When this mart was built (UTC).
+- name: mart_source_summary
+  description: Per publisher all-time totals and contribution to overall coverage.
+  columns:
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+    - unique
+    - relationships:
+        to: ref('dim_sources')
+        field: source_id
+  - name: source_name
+    description: Publisher name.
+  - name: total_articles
+    description: All articles from the publisher.
+    data_tests:
+    - not_null
+  - name: share_of_total_articles_pct
+    description: Publisher share of all articles.
+  - name: activity_rank
+    description: 1 = most articles.
+  - name: articles_with_publication_time
+    description: Articles with a known publication time.
+  - name: distinct_categories
+    description: Distinct categories covered.
+  - name: stories_covered
+    description: Active stories the publisher covers.
+  - name: stories_shared_with_other_sources
+    description: Of those, stories also covered by another publisher.
+  - name: stories_exclusive
+    description: Of those, stories only this publisher covers.
+  - name: first_published_at
+    description: Earliest publication.
+  - name: last_published_at
+    description: Latest publication.
+  - name: last_ingested_at
+    description: Latest ingestion.
+- name: mart_source_daily
+  description: 'Publication trends: publisher x publication date.'
+  columns:
+  - name: publication_date
+    description: Publication date.
+    data_tests:
+    - not_null
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+  - name: source_name
+    description: Publisher name.
+  - name: article_count
+    description: Articles published that day.
+    data_tests:
+    - not_null
+  - name: story_count
+    description: Distinct stories that day.
+  - name: category_count
+    description: Distinct categories that day.
+  - name: total_articles_on_date
+    description: All publishers' articles that day.
+  - name: share_of_date_pct
+    description: Publisher share of that day.
+  - name: activity_rank_on_date
+    description: 1 = most active publisher that day.
+  - name: cumulative_articles
+    description: Running total for the publisher.
+  data_tests:
+  - unique_combination:
+      combination_of_columns:
+      - publication_date
+      - source_id
+- name: mart_category_summary
+  description: Category x publisher over all articles.
+  columns:
+  - name: category_key
+    description: Category key.
+  - name: category_name
+    description: Category.
+    data_tests:
+    - not_null
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+  - name: source_name
+    description: Publisher name.
+  - name: article_count
+    description: Articles.
+    data_tests:
+    - not_null
+  - name: share_of_source_pct
+    description: Share of the publisher's articles.
+  - name: category_total_articles
+    description: Articles in the category across publishers.
+  - name: source_share_of_category_pct
+    description: Publisher share of the category.
+  data_tests:
+  - unique_combination:
+      combination_of_columns:
+      - category_name
+      - source_id
+- name: mart_category_daily
+  description: 'Category trends: date x category x publisher.'
+  columns:
+  - name: publication_date
+    description: Publication date.
+    data_tests:
+    - not_null
+  - name: category_key
+    description: Category key.
+  - name: category_name
+    description: Category.
+    data_tests:
+    - not_null
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+  - name: source_name
+    description: Publisher name.
+  - name: article_count
+    description: Articles.
+    data_tests:
+    - not_null
+  - name: share_of_source_day_pct
+    description: Category share of the publisher's day.
+  data_tests:
+  - unique_combination:
+      combination_of_columns:
+      - publication_date
+      - category_name
+      - source_id
+- name: mart_time_activity
+  description: Activity by date x hour x publisher; serves per-day, per-hour, weekday and trend views.
+  columns:
+  - name: publication_date
+    description: Publication date.
+    data_tests:
+    - not_null
+  - name: publication_hour
+    description: Hour 0-23.
+    data_tests:
+    - not_null
+    - expression_is_true:
+        expression: publication_hour between 0 and 23
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+  - name: publication_day_name
+    description: Day name.
+  - name: publication_iso_day_of_week
+    description: 1 = Monday ... 7 = Sunday.
+    data_tests:
+    - expression_is_true:
+        expression: publication_iso_day_of_week between 1 and 7
+  - name: publication_day_period
+    description: Day period.
+  - name: publication_is_weekend
+    description: 1 when weekend per dim_date.
+  - name: article_count
+    description: Articles.
+    data_tests:
+    - not_null
+  data_tests:
+  - unique_combination:
+      combination_of_columns:
+      - publication_date
+      - publication_hour
+      - source_id
+- name: mart_pipeline_runs
+  description: 'One row per pipeline run: status, duration and collection totals.'
+  columns:
+  - name: run_id
+    description: Run id.
+    data_tests:
+    - not_null
+    - unique
+  - name: run_date
+    description: Run date.
+  - name: run_status
+    description: Run status.
+    data_tests:
+    - not_null
+  - name: status_definition
+    description: Definition of the status.
+  - name: is_successful_run
+    description: 1 when run_status equals var('success_run_status_label').
+  - name: is_missed
+    description: 1 when a missed_reason was recorded.
+  - name: missed_reason
+    description: Reason the run was missed.
+  - name: scheduled_timestamp
+    description: Scheduled time.
+  - name: start_timestamp
+    description: Start.
+  - name: end_timestamp
+    description: End.
+  - name: duration_seconds
+    description: Seconds from start to end (NULL if unknown/invalid).
+    data_tests:
+    - expression_is_true:
+        expression: duration_seconds >= 0
+  - name: duration_minutes
+    description: Minutes from start to end.
+  - name: sources_attempted
+    description: Source rows in the run.
+  - name: sources_succeeded
+    description: Successful source collections.
+  - name: sources_failed
+    description: Source collections that were not successful.
+  - name: total_collection_attempts
+    description: Sum of attempts.
+  - name: articles_collected_total
+    description: Sum of collected articles (NULL counts as 0).
+  - name: articles_rejected_total
+    description: Sum of rejected articles.
+  - name: duplicate_records_total
+    description: Sum of duplicate records.
+  - name: sources_with_unknown_collected_count
+    description: Source rows whose collected count is NULL.
+  data_tests:
+  - expression_is_true:
+      expression: sources_succeeded <= sources_attempted
+- name: mart_pipeline_status_summary
+  description: Run counts and share per run status.
+  columns:
+  - name: run_status
+    description: Run status.
+    data_tests:
+    - not_null
+    - unique
+  - name: run_count
+    description: Runs with that status.
+    data_tests:
+    - not_null
+  - name: share_of_runs_pct
+    description: Share of all runs.
+  - name: avg_duration_minutes
+    description: Average duration of runs with valid start/end.
+  - name: articles_collected_total
+    description: Articles collected.
+  - name: articles_rejected_total
+    description: Articles rejected.
+  - name: duplicate_records_total
+    description: Duplicate records.
+  - name: first_run_started_at
+    description: Earliest run start.
+  - name: last_run_started_at
+    description: Latest run start.
+- name: mart_source_run_collection
+  description: Run x publisher collection results.
+  columns:
+  - name: run_id
+    description: Run id.
+    data_tests:
+    - not_null
+    - relationships:
+        to: ref('mart_pipeline_runs')
+        field: run_id
+  - name: run_date
+    description: Run date.
+  - name: run_status
+    description: Run status.
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+    - relationships:
+        to: ref('dim_sources')
+        field: source_id
+  - name: source_name
+    description: Publisher name.
+  - name: collection_outcome
+    description: Collection outcome.
+  - name: failed_step
+    description: Failed step.
+  - name: is_successful_collection
+    description: 1 when the outcome is the configured success label.
+  - name: attempt_count
+    description: Attempts.
+  - name: is_retried
+    description: 1 when attempts > 1.
+  - name: articles_collected_count
+    description: Collected.
+  - name: articles_rejected_count
+    description: Rejected.
+    data_tests:
+    - expression_is_true:
+        expression: articles_rejected_count >= 0
+  - name: duplicate_record_count
+    description: Duplicates.
+    data_tests:
+    - expression_is_true:
+        expression: duplicate_record_count >= 0
+  - name: rejected_to_collected_pct
+    description: Rejected / collected, percent.
+  - name: duplicate_to_collected_pct
+    description: Duplicates / collected, percent.
+  - name: error_description
+    description: Error text.
+  - name: start_timestamp
+    description: Run start.
+  - name: end_timestamp
+    description: Run end.
+  data_tests:
+  - unique_combination:
+      combination_of_columns:
+      - run_id
+      - source_id
+- name: mart_source_reliability
+  description: Collection reliability per publisher across runs.
+  columns:
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+    - unique
+    - relationships:
+        to: ref('dim_sources')
+        field: source_id
+  - name: source_name
+    description: Publisher name.
+  - name: collection_runs
+    description: Collections attempted.
+  - name: successful_collections
+    description: Successful collections.
+  - name: failed_collections
+    description: Unsuccessful collections.
+  - name: success_rate_pct
+    description: Successful / total, percent.
+    data_tests:
+    - expression_is_true:
+        expression: success_rate_pct between 0 and 100
+  - name: total_attempts
+    description: Sum of attempts.
+  - name: avg_attempts_per_collection
+    description: Average attempts.
+  - name: retried_collections
+    description: Collections needing more than one attempt.
+  - name: total_articles_collected
+    description: Articles collected.
+  - name: avg_articles_collected_per_run
+    description: Average articles per run.
+  - name: total_articles_rejected
+    description: Articles rejected.
+  - name: total_duplicate_records
+    description: Duplicate records.
+  - name: last_successful_run_date
+    description: Latest successful run date.
+  - name: last_failed_run_date
+    description: Latest unsuccessful run date.
+  - name: failures_by_step
+    description: Failure counts per failed step.

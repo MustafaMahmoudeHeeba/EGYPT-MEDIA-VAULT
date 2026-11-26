@@ -1,0 +1,200 @@
+version: 2
+models:
+- name: int_articles_enriched
+  description: 'Article grain hub: fact_news_articles with every dimension attached (LEFT JOINs, so unresolved keys surface in tests instead of dropping rows).'
+  columns:
+  - name: article_key
+    description: Surrogate key of the article.
+    data_tests:
+    - not_null
+    - unique
+  - name: article_id
+    description: Natural article id.
+    data_tests:
+    - not_null
+  - name: article_title
+    description: Headline.
+    data_tests:
+    - not_null
+  - name: original_url
+    description: Original URL.
+  - name: canonical_url_hash
+    description: Canonical URL hash.
+  - name: link_availability
+    description: Link availability status.
+  - name: has_content
+    description: 1 when article content is present.
+  - name: has_description
+    description: 1 when a description is present.
+  - name: has_image
+    description: 1 when an image URL is present.
+  - name: story_key
+    description: Story surrogate key.
+    data_tests:
+    - not_null
+  - name: story_id
+    description: Story ID.
+    data_tests:
+    - not_null
+  - name: story_title
+    description: Representative title of the story.
+  - name: source_key
+    description: Source version key as stored on the fact.
+  - name: source_id
+    description: Publisher id; resolved through the source version.
+    data_tests:
+    - not_null
+  - name: source_name
+    description: Publisher display name.
+  - name: category_key
+    description: Category key.
+  - name: category_name
+    description: Category name.
+    data_tests:
+    - not_null
+  - name: author_key
+    description: Author key.
+  - name: author_name
+    description: Author name.
+  - name: timestamp_validity
+    description: Timestamp validity flag.
+  - name: syndication_indicator
+    description: Syndication flag.
+  - name: publication_timestamp
+    description: Publication timestamp (NULL if unknown).
+  - name: has_publication_time
+    description: 1 when publication_timestamp is present.
+  - name: publication_date_key
+    description: Publication date key as stored on the fact.
+  - name: publication_date
+    description: Publication date from dim_date (NULL for the unknown member).
+  - name: publication_hour
+    description: Hour 0-23 from dim_time_of_day (NULL for the unknown member).
+  - name: publication_day_name
+    description: Day name from dim_date.
+  - name: publication_iso_day_of_week
+    description: 1 = Monday ... 7 = Sunday, computed from publication_date.
+  - name: publication_is_weekend
+    description: Weekend flag from dim_date.
+  - name: publication_day_period
+    description: Day period from dim_time_of_day.
+  - name: ingestion_timestamp
+    description: Ingestion timestamp.
+  - name: ingestion_date
+    description: Ingestion date (CAST of ingestion_timestamp).
+  - name: fact_article_count
+    description: Row-level measure on the fact (expected 1).
+  - name: article_updated_at
+    description: 'dim_article.warehouse_updated_at: last time the article row was updated in the warehouse.'
+- name: int_story_source_coverage
+  description: Grain story x source_id. Same-publisher articles collapse into one row, so the number of rows per story IS the distinct publisher count.
+  columns:
+  - name: story_key
+    description: Story key.
+  - name: story_id
+    description: Story ID.
+    data_tests:
+    - not_null
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+  - name: article_count
+    description: Articles of this story from this publisher.
+  - name: articles_with_publication_time
+    description: Of those, how many have a publication timestamp.
+  - name: articles_missing_publication_time
+    description: Of those, how many have no publication timestamp.
+  - name: first_published_at
+    description: Earliest publication timestamp of this publisher for this story.
+  - name: last_published_at
+    description: Latest publication timestamp of this publisher for this story.
+  data_tests:
+  - unique_combination:
+      combination_of_columns:
+      - story_key
+      - source_id
+  - expression_is_true:
+      expression: first_published_at <= last_published_at
+  - expression_is_true:
+      expression: article_count >= 1
+- name: int_pipeline_runs_enriched
+  description: 'Grain run: fact_pipeline_run with run status and run date attached.'
+  columns:
+  - name: run_id
+    description: Run id.
+    data_tests:
+    - not_null
+    - unique
+  - name: run_date_key
+    description: Run date key.
+  - name: run_date
+    description: Run date.
+  - name: run_status
+    description: Run status.
+    data_tests:
+    - not_null
+  - name: status_definition
+    description: Status definition.
+  - name: run_count
+    description: Row-level measure (expected 1).
+  - name: scheduled_timestamp
+    description: Scheduled time.
+  - name: start_timestamp
+    description: Start.
+  - name: end_timestamp
+    description: End.
+  - name: missed_reason
+    description: Reason the run was missed.
+- name: int_source_collection_enriched
+  description: 'Grain run x source: collection facts with run status, outcome, source and run date attached.'
+  columns:
+  - name: run_id
+    description: Run id.
+    data_tests:
+    - not_null
+  - name: source_key
+    description: Source version key.
+  - name: source_id
+    description: Publisher id.
+    data_tests:
+    - not_null
+  - name: source_name
+    description: Publisher name.
+  - name: run_date_key
+    description: Run date key.
+  - name: run_date
+    description: Run date.
+  - name: run_status
+    description: Run status.
+  - name: collection_outcome
+    description: Collection outcome.
+    data_tests:
+    - not_null
+  - name: failed_step
+    description: Failed step recorded by the pipeline.
+  - name: is_successful_collection
+    description: 1 when the outcome equals var('success_outcome_label') (case-insensitive).
+  - name: attempt_count
+    description: Collection attempts.
+  - name: is_retried
+    description: 1 when attempt_count > 1.
+  - name: articles_collected_count
+    description: Articles collected (NULL if unknown).
+  - name: articles_rejected_count
+    description: Articles rejected.
+  - name: duplicate_record_count
+    description: Duplicate records.
+  - name: error_description
+    description: Error text.
+  - name: scheduled_timestamp
+    description: Run scheduled time.
+  - name: start_timestamp
+    description: Run start.
+  - name: end_timestamp
+    description: Run end.
+  data_tests:
+  - unique_combination:
+      combination_of_columns:
+      - run_id
+      - source_id
