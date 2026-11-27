@@ -1,0 +1,146 @@
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    build:
+      context: ..
+      dockerfile: airflow/Dockerfile
+    image: egypt-media-vault-airflow:1.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow/dags:/opt/airflow/project
+
+      AZURE_SQL_SERVER: ${AZURE_SQL_SERVER:?AZURE_SQL_SERVER must be set in .env}
+      AZURE_SQL_DATABASE: ${AZURE_SQL_DATABASE:-egypt_media_vault}
+      AZURE_SQL_USERNAME: ${AZURE_SQL_USERNAME:?AZURE_SQL_USERNAME must be set in .env}
+      AZURE_SQL_PASSWORD: ${AZURE_SQL_PASSWORD:?AZURE_SQL_PASSWORD must be set in .env}
+
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:?AZURE_STORAGE_ACCOUNT_NAME must be set in .env}
+      AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY:?AZURE_STORAGE_ACCOUNT_KEY must be set in .env}
+      AZURE_STORAGE_CONTAINER_NAME: ${AZURE_STORAGE_CONTAINER_NAME:-egypt-media-vault}
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ../pipeline:/opt/airflow/project/pipeline
+      - ../scripts:/opt/airflow/project/scripts
+
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+
+        airflow db migrate
+
+        if airflow users list --output json | python -c "import json, sys; users=json.load(sys.stdin); sys.exit(0 if any(user.get('username') == 'admin' for user in users) else 1)"; then
+          echo "Airflow admin user already exists. Skipping creation."
+        else
+          airflow users create \
+            --username admin \
+            --password admin \
+            --firstname Admin \
+            --lastname User \
+            --role Admin \
+            --email admin@example.com
+        fi
+
+        echo "Airflow initialization completed successfully."
+
+    restart: "no"
+
+  airflow-webserver:
+    image: egypt-media-vault-airflow:1.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow/dags:/opt/airflow/project
+
+      DBT_PROJECT_HOST_PATH: ${DBT_PROJECT_HOST_PATH:?DBT_PROJECT_HOST_PATH must be set in airflow/.env}
+      DBT_PROFILES_HOST_PATH: ${DBT_PROFILES_HOST_PATH:?DBT_PROFILES_HOST_PATH must be set in airflow/.env}
+
+      AZURE_SQL_SERVER: ${AZURE_SQL_SERVER:?AZURE_SQL_SERVER must be set in .env}
+      AZURE_SQL_DATABASE: ${AZURE_SQL_DATABASE:-egypt_media_vault}
+      AZURE_SQL_USERNAME: ${AZURE_SQL_USERNAME:?AZURE_SQL_USERNAME must be set in .env}
+      AZURE_SQL_PASSWORD: ${AZURE_SQL_PASSWORD:?AZURE_SQL_PASSWORD must be set in .env}
+
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:?AZURE_STORAGE_ACCOUNT_NAME must be set in .env}
+      AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY:?AZURE_STORAGE_ACCOUNT_KEY must be set in .env}
+      AZURE_STORAGE_CONTAINER_NAME: ${AZURE_STORAGE_CONTAINER_NAME:-egypt-media-vault}
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ../pipeline:/opt/airflow/project/pipeline
+      - ../scripts:/opt/airflow/project/scripts
+
+    ports:
+      - "8080:8080"
+
+    command: webserver
+
+  airflow-scheduler:
+    image: egypt-media-vault-airflow:1.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow/dags:/opt/airflow/project
+
+      DBT_PROJECT_HOST_PATH: ${DBT_PROJECT_HOST_PATH:?DBT_PROJECT_HOST_PATH must be set in airflow/.env}
+      DBT_PROFILES_HOST_PATH: ${DBT_PROFILES_HOST_PATH:?DBT_PROFILES_HOST_PATH must be set in airflow/.env}
+
+      AZURE_SQL_SERVER: ${AZURE_SQL_SERVER:?AZURE_SQL_SERVER must be set in .env}
+      AZURE_SQL_DATABASE: ${AZURE_SQL_DATABASE:-egypt_media_vault}
+      AZURE_SQL_USERNAME: ${AZURE_SQL_USERNAME:?AZURE_SQL_USERNAME must be set in .env}
+      AZURE_SQL_PASSWORD: ${AZURE_SQL_PASSWORD:?AZURE_SQL_PASSWORD must be set in .env}
+
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:?AZURE_STORAGE_ACCOUNT_NAME must be set in .env}
+      AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY:?AZURE_STORAGE_ACCOUNT_KEY must be set in .env}
+      AZURE_STORAGE_CONTAINER_NAME: ${AZURE_STORAGE_CONTAINER_NAME:-egypt-media-vault}
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ../pipeline:/opt/airflow/project/pipeline
+      - ../scripts:/opt/airflow/project/scripts
+      - /var/run/docker.sock:/var/run/docker.sock
+      - airflow_run_state:/opt/airflow/run_state
+
+    command: scheduler
+
+volumes:
+  airflow_postgres_data:
+  airflow_run_state:
