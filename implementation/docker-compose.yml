@@ -1,0 +1,26 @@
+﻿services:
+  dbt:
+    build:
+      context: C:/docker-test
+      dockerfile: Dockerfile
+    image: egypt-media-vault-dbt:1.0
+    working_dir: /usr/app/dbt
+
+    volumes:
+      - ./dbt:/usr/app/dbt
+      - ./dbt/profiles.yml.example:/root/.dbt/profiles.yml:ro
+
+    environment:
+      DBT_PROFILES_DIR: /root/.dbt
+
+      DBT_SQLSERVER_HOST: ${AZURE_SQL_SERVER:?AZURE_SQL_SERVER must be set in .env}
+      DBT_SQLSERVER_DATABASE: ${AZURE_SQL_DATABASE:-egypt_media_vault}
+      DBT_SQLSERVER_USER: ${AZURE_SQL_USERNAME:?AZURE_SQL_USERNAME must be set in .env}
+      DBT_SQLSERVER_PASSWORD: ${AZURE_SQL_PASSWORD:?AZURE_SQL_PASSWORD must be set in .env}
+
+      DBT_SQLSERVER_SCHEMA: dbt
+      DBT_SQLSERVER_AUTH: sql
+
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+
