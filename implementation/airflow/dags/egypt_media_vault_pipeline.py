@@ -1,6 +1,6 @@
 ﻿"""
 Egypt Media Vault - Production Pipeline.
-Airflow DAG scheduled every 30 minutes.
+Airflow DAG scheduled every 15 minutes.
 """
 
 from egypt_media_vault.dag_factory import build_pipeline_dag
