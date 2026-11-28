@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html { -webkit-text-size-adjust: 100%; }
+body { @apply bg-ivory text-navy antialiased; font-family: ui-sans-serif, system-ui, "Segoe UI", Tahoma, "Noto Naskh Arabic", "Noto Sans Arabic", Arial, sans-serif; overflow-x: hidden; }
+[dir="rtl"] body { line-height: 1.7; }
+/* Arabic content inside an LTR UI (and vice versa) resolves its own direction */
+.rtl-auto { unicode-bidi: plaintext; text-align: start; }
